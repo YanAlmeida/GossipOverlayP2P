@@ -1,5 +1,6 @@
 import java.io.File;
 import java.io.IOException;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
@@ -14,8 +15,9 @@ public class Peer {
     private List<String> addressesPeers = new ArrayList<String>();
     private InetAddress address;
     private Integer port;
+    private DatagramSocket serverSocket;
 
-    public Peer() throws UnknownHostException {
+    public void inicializa() throws UnknownHostException, SocketException{
         Scanner scanner = new Scanner(System.in);
 
         System.out.println("Insira o IP: ");
@@ -23,6 +25,8 @@ public class Peer {
 
         System.out.println("Insira a porta: ");
         port = Integer.parseInt(scanner.nextLine());
+
+        serverSocket = new DatagramSocket(port, address);
 
         System.out.println("Insira o caminho da pasta: ");
         String folderPath = scanner.nextLine();
@@ -61,6 +65,10 @@ public class Peer {
         }
     }
 
+    public DatagramSocket getServerSocket() {
+        return serverSocket;
+    }
+
     private static String getIpAddress(byte[] rawBytes) {
         int i = 4;
         StringBuilder ipAddress = new StringBuilder();
@@ -73,8 +81,9 @@ public class Peer {
         return ipAddress.toString();
     }
 
-    public static void main(String[] args) throws SocketException, IOException{
+    public static void main(String[] args) throws SocketException, UnknownHostException{
         Peer peer = new Peer();
+        peer.inicializa();
     }
 
 }
