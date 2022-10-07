@@ -7,23 +7,30 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.Scanner;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
 
 public class Peer {
+    private List<String> processedFiles = Collections.synchronizedList(new ArrayList<>());
     private List<String> filesFolder = new ArrayList<String>();
     private List<String> addressesPeers = new ArrayList<String>();
     private InetAddress address;
     private Integer port;
     private DatagramSocket serverSocket;
     private Boolean initialized = false;
-    ThreadRotina threadRotina;
     private Scanner scanner;
+    private Condition conditionThreadMenu;
+    private ThreadRotina threadRotina;
 
     public Peer(Scanner scannerIn){
         scanner = scannerIn;
@@ -58,12 +65,16 @@ public class Peer {
         threadRotina.start();
     }
 
-    public void busca() throws UnknownHostException{
+    public void busca() throws UnknownHostException, InterruptedException {
         System.out.println("Digite o nome do arquivo (com extensão): ");
         String filename = scanner.next();
-        search(filename, address, port);
-        //incluir aqui a parte que faz cache do que foi processado e da espera do retorno
-        // Adicionar mapping com filenames encontrados e o resultado a ser printado, e usar ele para esperar por resposta.
+        if(search(filename, address, port)){
+            if(conditionThreadMenu.await(30, TimeUnit.SECONDS)){
+                return;
+            }
+            System.out.println("Ninguém no sistema possui o arquivo " + filename);
+        }
+
     }
 
     public void enviaMensagem(InetAddress solicitanteAddress, Integer portaSolicitante, Mensagem mensagem) {
@@ -79,15 +90,23 @@ public class Peer {
         }
     }
 
-    public void search(String fileName, InetAddress solicitanteAddress, Integer portaSolicitante) throws UnknownHostException {
-        //Inserir aqui verificação de requisição já processada
+    public Boolean search(String fileName, InetAddress solicitanteAddress, Integer portaSolicitante) throws UnknownHostException {
         String ipPortaFormatado = String.format("%s:%s", getIpAddress(address.getAddress()), port);
         String ipPortaFormatadoSolicitante = String.format("%s:%s", getIpAddress(solicitanteAddress.getAddress()), portaSolicitante);
+        if(processedFiles.contains(fileName)){
+            Mensagem mensagem = new Mensagem("DISCARD", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName);
+            enviaMensagem(solicitanteAddress, portaSolicitante, mensagem);
+            System.out.println("Requisição já processada.");
+            return false;
+        }
+
+        processedFiles.add(fileName);
+
         if(filesFolder.contains(fileName)){
             System.out.println("Tenho " + fileName + " respondendo para " + ipPortaFormatadoSolicitante);
             Mensagem mensagem = new Mensagem("RESPONSE", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName);
             enviaMensagem(solicitanteAddress, portaSolicitante, mensagem);
-            return;
+            return false;
         }
 
         Integer randomIndex = new Random().nextInt(addressesPeers.size());
@@ -95,7 +114,7 @@ public class Peer {
         System.out.println("Não tenho " + fileName + ", encaminhando para " + randomPeerIP);
         Mensagem mensagem = new Mensagem("REQUEST", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName);
         enviaMensagem(InetAddress.getByName(getIpv4FromIpPort(randomPeerIP)), getPortFromIpPort(randomPeerIP), mensagem);
-        return;
+        return true;
     }
 
     private class ThreadRotina extends Thread{
@@ -123,33 +142,44 @@ public class Peer {
     private class ThreadMenu extends Thread{
         public void run() {
             Boolean loop = true;
-            while(loop) {
-                System.out.println("Selecione uma das opções: \n1: INITIALIZE\n2: SEARCH");
-                Integer optionSelected = scanner.nextInt();
-
-                switch(optionSelected) {
-                    case 1:
-                        try {
-                            inicializa();
-                        } catch (UnknownHostException e) {
-                            loop = false;
-                            e.printStackTrace();
-                        } catch (SocketException e) {
-                            loop = false;
-                            e.printStackTrace();
-                        }
-                    break;
-
-                    case 2:
-                        try {
-                            busca();
-                        }catch (UnknownHostException e) {
-                            loop = false;
-                            e.printStackTrace();
-                        }
-                    break;
+            Lock lock = new ReentrantLock();
+            conditionThreadMenu = lock.newCondition();
+            lock.lock();
+            try {
+                while(loop) {
+                    System.out.println("Selecione uma das opções: \n1: INITIALIZE\n2: SEARCH");
+                    String optionSelected = scanner.next();
+    
+                    switch(optionSelected) {
+                        case "1":
+                            try {
+                                inicializa();
+                            } catch (UnknownHostException e) {
+                                loop = false;
+                                e.printStackTrace();
+                            } catch (SocketException e) {
+                                loop = false;
+                                e.printStackTrace();
+                            }
+                        break;
+    
+                        case "2":
+                            try {
+                                busca();
+                            }catch (UnknownHostException e) {
+                                loop = false;
+                                e.printStackTrace();
+                            }catch (InterruptedException e){
+                                loop = false;
+                                e.printStackTrace();
+                            }
+                        break;
+                    }
                 }
+            } finally {
+                lock.unlock();
             }
+
         }
     }
 
