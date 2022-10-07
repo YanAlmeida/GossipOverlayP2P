@@ -36,47 +36,6 @@ public class Peer {
         scanner = scannerIn;
     }
 
-    public void inicializa() throws UnknownHostException, SocketException{
-
-        if(threadRotina != null){
-            threadRotina.interrupt();
-            serverSocket.close();
-        }
-
-        System.out.println("Insira o IP: ");
-        address = InetAddress.getByName(scanner.next());
-
-        System.out.println("Insira a porta: ");
-        port = scanner.nextInt();
-
-        serverSocket = new DatagramSocket(port, address);
-
-        System.out.println("Insira o caminho da pasta: ");
-        String folderPath = scanner.next();
-
-        System.out.println("Insira o [IP]:[PORTA] do primeiro peer: ");
-        addressesPeers.add(scanner.next());
-
-        System.out.println("Insira o [IP]:[PORTA] do segundo peer: ");
-        addressesPeers.add(scanner.next());
-
-        initialized = true;
-        threadRotina = this.new ThreadRotina(folderPath);
-        threadRotina.start();
-    }
-
-    public void busca() throws UnknownHostException, InterruptedException {
-        System.out.println("Digite o nome do arquivo (com extensão): ");
-        String filename = scanner.next();
-        if(search(filename, address, port)){
-            if(conditionThreadMenu.await(30, TimeUnit.SECONDS)){
-                return;
-            }
-            System.out.println("Ninguém no sistema possui o arquivo " + filename);
-        }
-
-    }
-
     public void enviaMensagem(InetAddress solicitanteAddress, Integer portaSolicitante, Mensagem mensagem) {
         if (solicitanteAddress.getAddress() == address.getAddress() && port == portaSolicitante) { return; }
         byte[] sendBuffer = new byte[1024];
@@ -140,6 +99,48 @@ public class Peer {
     }
 
     private class ThreadMenu extends Thread{
+
+        public void inicializa() throws UnknownHostException, SocketException{
+            
+            if(threadRotina != null){
+                threadRotina.interrupt();
+                serverSocket.close();
+            }
+
+            System.out.println("Insira o IP: ");
+            address = InetAddress.getByName(scanner.next());
+
+            System.out.println("Insira a porta: ");
+            port = scanner.nextInt();
+
+            serverSocket = new DatagramSocket(port, address);
+
+            System.out.println("Insira o caminho da pasta: ");
+            String folderPath = scanner.next();
+
+            System.out.println("Insira o [IP]:[PORTA] do primeiro peer: ");
+            addressesPeers.add(scanner.next());
+
+            System.out.println("Insira o [IP]:[PORTA] do segundo peer: ");
+            addressesPeers.add(scanner.next());
+
+            initialized = true;
+            threadRotina = new ThreadRotina(folderPath);
+            threadRotina.start();
+        }
+
+        public void busca() throws UnknownHostException, InterruptedException {
+            System.out.println("Digite o nome do arquivo (com extensão): ");
+            String filename = scanner.next();
+            if(search(filename, address, port)){
+                if(conditionThreadMenu.await(30, TimeUnit.SECONDS)){
+                    return;
+                }
+                System.out.println("Ninguém no sistema possui o arquivo " + filename);
+            }
+    
+        }
+
         public void run() {
             Boolean loop = true;
             Lock lock = new ReentrantLock();
@@ -194,10 +195,6 @@ public class Peer {
         public void run() {
 
         }
-    }
-
-    public DatagramSocket getServerSocket() {
-        return serverSocket;
     }
 
     private static String getIpAddress(byte[] rawBytes) {
