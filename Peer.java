@@ -28,8 +28,9 @@ public class Peer {
     private InetAddress address;
     private Integer port;
     private DatagramSocket serverSocket;
-    private Boolean initialized = false;
+    private volatile Boolean initialized = false;
     private Scanner scanner;
+    private Lock lockThreadMenu;
     private Condition conditionThreadMenu;
     private ThreadRotina threadRotina;
 
@@ -94,7 +95,6 @@ public class Peer {
     private class ThreadMenu extends Thread{
 
         public void inicializa() throws UnknownHostException, SocketException{
-            
             if(threadRotina != null){
                 threadRotina.interrupt();
                 serverSocket.close();
@@ -137,9 +137,9 @@ public class Peer {
 
         public void run() {
             Boolean loop = true;
-            Lock lock = new ReentrantLock();
-            conditionThreadMenu = lock.newCondition();
-            lock.lock();
+            lockThreadMenu = new ReentrantLock();
+            conditionThreadMenu = lockThreadMenu.newCondition();
+            lockThreadMenu.lock();
             try {
                 while(loop) {
                     System.out.println("Selecione uma das opções: \n1: INITIALIZE\n2: SEARCH");
@@ -172,7 +172,7 @@ public class Peer {
                     }
                 }
             } finally {
-                lock.unlock();
+                lockThreadMenu.unlock();
             }
 
         }
@@ -191,7 +191,7 @@ public class Peer {
                 String stringData = new String(packet.getData(), packet.getOffset(), packet.getLength());
                 Mensagem mensagemRecebida = new Mensagem(stringData);
                 if(processedRequests.contains(mensagemRecebida.requestUUID)){
-                    System.out.println("Requisição já recebida.");
+                    System.out.println("Requisição já processada.");
                     return;
                 }
                 processedRequests.add(mensagemRecebida.requestUUID);
@@ -203,7 +203,14 @@ public class Peer {
                     break;
     
                     case "RESPONSE":
-                        conditionThreadMenu.signal();
+                        lockThreadMenu.lock();
+                        try {
+                            conditionThreadMenu.signal();
+                            System.out.println("Arquivo " + mensagemRecebida.fileName + " está no peer " + mensagemRecebida.sender);
+                        } finally {
+                            lockThreadMenu.unlock();
+                        }
+                        
                     break;
                 }
             } catch(UnknownHostException e){
