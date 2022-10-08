@@ -18,10 +18,11 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.UUID;
 
 
 public class Peer {
-    private List<String> processedFiles = Collections.synchronizedList(new ArrayList<>());
+    private List<String> processedRequests = Collections.synchronizedList(new ArrayList<>());
     private List<String> filesFolder = new ArrayList<String>();
     private List<String> addressesPeers = new ArrayList<String>();
     private InetAddress address;
@@ -49,21 +50,13 @@ public class Peer {
         }
     }
 
-    public Boolean search(String fileName, InetAddress solicitanteAddress, Integer portaSolicitante) throws UnknownHostException {
+    public Boolean search(String fileName, InetAddress solicitanteAddress, Integer portaSolicitante, String uuid) throws UnknownHostException {
         String ipPortaFormatado = String.format("%s:%s", getIpAddress(address.getAddress()), port);
         String ipPortaFormatadoSolicitante = String.format("%s:%s", getIpAddress(solicitanteAddress.getAddress()), portaSolicitante);
-        if(processedFiles.contains(fileName)){
-            Mensagem mensagem = new Mensagem("DISCARD", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName);
-            enviaMensagem(solicitanteAddress, portaSolicitante, mensagem);
-            System.out.println("Requisição já processada.");
-            return false;
-        }
-
-        processedFiles.add(fileName);
 
         if(filesFolder.contains(fileName)){
             System.out.println("Tenho " + fileName + " respondendo para " + ipPortaFormatadoSolicitante);
-            Mensagem mensagem = new Mensagem("RESPONSE", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName);
+            Mensagem mensagem = new Mensagem("RESPONSE", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName, uuid);
             enviaMensagem(solicitanteAddress, portaSolicitante, mensagem);
             return false;
         }
@@ -71,7 +64,7 @@ public class Peer {
         Integer randomIndex = new Random().nextInt(addressesPeers.size());
         String randomPeerIP = addressesPeers.get(randomIndex);
         System.out.println("Não tenho " + fileName + ", encaminhando para " + randomPeerIP);
-        Mensagem mensagem = new Mensagem("REQUEST", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName);
+        Mensagem mensagem = new Mensagem("REQUEST", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName, uuid);
         enviaMensagem(InetAddress.getByName(getIpv4FromIpPort(randomPeerIP)), getPortFromIpPort(randomPeerIP), mensagem);
         return true;
     }
@@ -131,8 +124,9 @@ public class Peer {
 
         public void busca() throws UnknownHostException, InterruptedException {
             System.out.println("Digite o nome do arquivo (com extensão): ");
+            String uuid = UUID.randomUUID().toString();
             String filename = scanner.next();
-            if(search(filename, address, port)){
+            if(search(filename, address, port, uuid)){
                 if(conditionThreadMenu.await(30, TimeUnit.SECONDS)){
                     return;
                 }
@@ -193,7 +187,28 @@ public class Peer {
         }
 
         public void run() {
-
+            try {
+                String stringData = new String(packet.getData(), packet.getOffset(), packet.getLength());
+                Mensagem mensagemRecebida = new Mensagem(stringData);
+                if(processedRequests.contains(mensagemRecebida.requestUUID)){
+                    System.out.println("Requisição já recebida.");
+                    return;
+                }
+                processedRequests.add(mensagemRecebida.requestUUID);
+                InetAddress solicitanteInicial = InetAddress.getByName(getIpv4FromIpPort(mensagemRecebida.solicitanteInicial));
+                Integer portSolicitanteInicial = getPortFromIpPort(mensagemRecebida.solicitanteInicial);
+                switch(mensagemRecebida.messageType) {
+                    case "REQUEST":
+                        search(mensagemRecebida.fileName, solicitanteInicial, portSolicitanteInicial, mensagemRecebida.requestUUID);
+                    break;
+    
+                    case "RESPONSE":
+                        conditionThreadMenu.signal();
+                    break;
+                }
+            } catch(UnknownHostException e){
+                e.printStackTrace();
+            }
         }
     }
 
