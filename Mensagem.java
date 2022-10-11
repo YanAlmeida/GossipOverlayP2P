@@ -2,6 +2,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class Mensagem {
+    /* Classe para representar a mensagem trocada entre os peers */
     public String messageType;
     public String sender;
     public String solicitanteInicial;
@@ -9,6 +10,9 @@ public class Mensagem {
     public String requestUUID;
 
     public Mensagem(String type, String origem, String solicitante, String file, String uuid) {
+        /* Construtor para gerar mensagem a partir dos dados
+         * (tipo, sender, solicitante inicial, nome do arquivo e uuid)
+        */
         messageType = type;
         sender = origem;
         solicitanteInicial = solicitante;
@@ -17,6 +21,7 @@ public class Mensagem {
     }
 
     public Mensagem(String jsonString) {
+        /* Construtor para gerar mensagem a partir de sua representação como string em JSON */
         Pattern typePattern = Pattern.compile("\"messageType\": \"(.+?)\"");
         Pattern senderPattern = Pattern.compile("\"sender\": \"(.+?)\"");
         Pattern solicitanteInicialPattern = Pattern.compile("\"solicitanteInicial\": \"(.+?)\"");
@@ -43,6 +48,7 @@ public class Mensagem {
     }
 
     public String toJson() {
+        /* Método para transformar a mensagem em string JSON */
         
         return String.format(
             "{\"messageType\": \"%s\", \"sender\": \"%s\", \"solicitanteInicial\": \"%s\", \"fileName\": \"%s\", \"requestUUID\": \"%s\"}",

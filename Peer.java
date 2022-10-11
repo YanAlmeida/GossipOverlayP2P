@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.Scanner;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -23,10 +24,12 @@ import java.util.UUID;
 
 public class Peer {
     private List<String> processedRequests = Collections.synchronizedList(new ArrayList<>());
-    private List<String> filesFolder = new ArrayList<String>();
-    private List<String> addressesPeers = new ArrayList<String>();
+    private List<String> processedResponses = Collections.synchronizedList(new ArrayList<>());
+    private ConcurrentHashMap<String, List<String>> filesFolder = new ConcurrentHashMap<String, List<String>>();
+    private List<String> addressesPeers = Collections.synchronizedList(new ArrayList<>());
     private InetAddress address;
     private Integer port;
+    private String folderPath;
     private DatagramSocket serverSocket;
     private volatile Boolean initialized = false;
     private Scanner scanner;
@@ -35,14 +38,15 @@ public class Peer {
     private ThreadRotina threadRotina;
 
     public Peer(Scanner scannerIn){
+        /* Construtor recebendo scanner para uso em diversos métodos/threads. */
         scanner = scannerIn;
     }
 
-    public void enviaMensagem(InetAddress solicitanteAddress, Integer portaSolicitante, Mensagem mensagem) {
-        if (solicitanteAddress.getAddress() == address.getAddress() && port == portaSolicitante) { return; }
+    public void enviaMensagem(InetAddress destinoAddress, Integer portaDestino, Mensagem mensagem) {
+        /* Método para enviar mensagem através do socket UDP para um endereço e porta de destino */
         byte[] sendBuffer = new byte[1024];
         sendBuffer = mensagem.toJson().getBytes();
-        DatagramPacket packetSend = new DatagramPacket(sendBuffer, sendBuffer.length, solicitanteAddress, portaSolicitante);
+        DatagramPacket packetSend = new DatagramPacket(sendBuffer, sendBuffer.length, destinoAddress, portaDestino);
         try{
             serverSocket.send(packetSend);
         } catch(IOException e){
@@ -52,13 +56,20 @@ public class Peer {
     }
 
     public Boolean search(String fileName, InetAddress solicitanteAddress, Integer portaSolicitante, String uuid) throws UnknownHostException {
+        /* Método para efetuar busca por arquivo e responde para solicitante caso possua.
+         * Caso não possua, pergunta a outro peer aleatório 
+        */
         String ipPortaFormatado = String.format("%s:%s", getIpAddress(address.getAddress()), port);
         String ipPortaFormatadoSolicitante = String.format("%s:%s", getIpAddress(solicitanteAddress.getAddress()), portaSolicitante);
 
-        if(filesFolder.contains(fileName)){
-            System.out.println("Tenho " + fileName + " respondendo para " + ipPortaFormatadoSolicitante);
-            Mensagem mensagem = new Mensagem("RESPONSE", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName, uuid);
-            enviaMensagem(solicitanteAddress, portaSolicitante, mensagem);
+        if(filesFolder.get(folderPath).contains(fileName)){
+            if (ipPortaFormatado.equals(ipPortaFormatadoSolicitante)) { 
+                System.out.println(String.format("Eu (%s) possuo o arquivo %s", ipPortaFormatadoSolicitante, fileName));
+             }else{
+                System.out.println("Tenho " + fileName + " respondendo para " + ipPortaFormatadoSolicitante);
+                Mensagem mensagem = new Mensagem("RESPONSE", ipPortaFormatado, ipPortaFormatadoSolicitante, fileName, uuid);
+                enviaMensagem(solicitanteAddress, portaSolicitante, mensagem);
+             }
             return false;
         }
 
@@ -71,20 +82,20 @@ public class Peer {
     }
 
     private class ThreadRotina extends Thread{
-        private File folder;
-
-        public ThreadRotina(String folderPath) {
-            folder = new File(folderPath);
-        }
+        /* Classe aninhada que representa a thread da rotina de verificação da pasta selecionada e atualização da estrutura */
+        private File folder = new File(folderPath);
 
         public void run() {
-            filesFolder = Arrays.asList(folder.listFiles()).stream().map(File::getName).collect(Collectors.toList());
-            System.out.println("Arquivos da pasta: " + Arrays.toString(filesFolder.toArray()));
+            /* Execução da ThreadRotina, que inicialmente exibe os arquivos da pasta no formato de lista e, então,
+             * executa um laço para atualizar o ConcurrentHashMap e exibir os arquivos armazenados nele a cada 30 segundos
+            */
+            filesFolder.put(folderPath, Arrays.asList(folder.listFiles()).stream().map(File::getName).collect(Collectors.toList()));
+            System.out.println("Arquivos da pasta: " + filesFolder.get(folderPath));
             while(true){
                 try {
                     sleep(30000);
-                    filesFolder = Arrays.asList(folder.listFiles()).stream().map(File::getName).collect(Collectors.toList());
-                    System.out.println(String.format("Sou peer %s:%d com arquivos %s", getIpAddress(address.getAddress()), port, Arrays.toString(filesFolder.toArray())));
+                    filesFolder.put(folderPath, Arrays.asList(folder.listFiles()).stream().map(File::getName).collect(Collectors.toList()));
+                    System.out.println(String.format("Sou peer %s:%d com arquivos %s", getIpAddress(address.getAddress()), port, filesFolder.get(folderPath)));
                 } catch (InterruptedException e) {
                     return;
                 }
@@ -93,8 +104,15 @@ public class Peer {
     }
 
     private class ThreadMenu extends Thread{
+        /* Classe aninhada que representa a thread que executa o menu interativo e possui os métodos
+         * correspondentes a suas opções
+         */
 
         public void inicializa() throws UnknownHostException, SocketException{
+            /* Método correspondente à opção "INITIALIZE" do menu. Responsável por colher dados como:
+             * O endereço/porta do peer, a pasta a monitorar e os endereços/portas dos outros dois peers,
+             * além de inicializar a thread rotina.
+             */
             if(threadRotina != null){
                 threadRotina.interrupt();
                 serverSocket.close();
@@ -109,7 +127,7 @@ public class Peer {
             serverSocket = new DatagramSocket(port, address);
 
             System.out.println("Insira o caminho da pasta: ");
-            String folderPath = scanner.next();
+            folderPath = scanner.next();
 
             System.out.println("Insira o [IP]:[PORTA] do primeiro peer: ");
             addressesPeers.add(scanner.next());
@@ -118,12 +136,17 @@ public class Peer {
             addressesPeers.add(scanner.next());
 
             initialized = true;
-            threadRotina = new ThreadRotina(folderPath);
+            threadRotina = new ThreadRotina();
             threadRotina.start();
         }
 
         public Boolean busca(String filename) throws UnknownHostException, InterruptedException {
+            /* Método correspondente à opção "SEARCH" do menu, responsável por gerar um UUID para a operação
+             * e por estabelecer o timeout da mesma através do uso de locks/conditions, possibilitando os retries
+             * automáticos
+             */
             String uuid = UUID.randomUUID().toString();
+            processedRequests.add(uuid); // Para evitar que a requisição seja reprocessada pelo peer
             if(search(filename, address, port, uuid)){
                 if(conditionThreadMenu.await(1250, TimeUnit.MILLISECONDS)){
                     return true;
@@ -134,6 +157,9 @@ public class Peer {
         }
 
         public void run() {
+            /* Execução da ThreadMenu, executa um loop para exibir as opções e colher a escolha do usuário,
+             * executando o método correspondente
+             */
             Boolean loop = true;
             lockThreadMenu = new ReentrantLock();
             conditionThreadMenu = lockThreadMenu.newCondition();
@@ -185,30 +211,42 @@ public class Peer {
     }
 
     private class ThreadServer extends Thread{
-
+        /* Classe aninhada que representa a thread responsável pelo recebimento e processamento (ou descarte)
+         * das requisições
+        */
         DatagramPacket packet;
 
         public ThreadServer(DatagramPacket receivedPacket) {
+            /* Construtor recebe o datagrama enviado */
             packet = receivedPacket;
         }
 
         public void run() {
+            /* Execução da ThreadServer, realiza a extração da mensagem transmitida, verifica se a requisição
+             * já foi processada através do UUID e, dependendo do tipo da mensagem ("REQUEST" ou "RESPONSE"),
+             * direciona para busca ou envia um signal para a condition na ThreadRotina, evitando o timeout
+             */
             try {
                 String stringData = new String(packet.getData(), packet.getOffset(), packet.getLength());
                 Mensagem mensagemRecebida = new Mensagem(stringData);
-                if(processedRequests.contains(mensagemRecebida.requestUUID)){
-                    System.out.println("Requisição já processada.");
-                    return;
-                }
-                processedRequests.add(mensagemRecebida.requestUUID);
                 InetAddress solicitanteInicial = InetAddress.getByName(getIpv4FromIpPort(mensagemRecebida.solicitanteInicial));
                 Integer portSolicitanteInicial = getPortFromIpPort(mensagemRecebida.solicitanteInicial);
                 switch(mensagemRecebida.messageType) {
                     case "REQUEST":
+                        if(processedRequests.contains(mensagemRecebida.requestUUID)){
+                            System.out.println("Requisição já processada.");
+                            return;
+                        }
+                        processedRequests.add(mensagemRecebida.requestUUID);
                         search(mensagemRecebida.fileName, solicitanteInicial, portSolicitanteInicial, mensagemRecebida.requestUUID);
                     break;
     
                     case "RESPONSE":
+                        if(processedResponses.contains(mensagemRecebida.requestUUID)){
+                            System.out.println("Requisição já processada.");
+                            return;
+                        }
+                        processedResponses.add(mensagemRecebida.requestUUID);
                         lockThreadMenu.lock();
                         try {
                             conditionThreadMenu.signal();
@@ -228,6 +266,7 @@ public class Peer {
     }
 
     private static String getIpAddress(byte[] rawBytes) {
+        /* Método para conversão de array de bytes em endereço IPv4 */
         int i = 4;
         StringBuilder ipAddress = new StringBuilder();
         for (byte raw : rawBytes) {
@@ -240,6 +279,7 @@ public class Peer {
     }
 
     private static String getIpv4FromIpPort(String ipPortAddress){
+        /* Método para extração do endereço de IP de string com formato IP:PORTA */
         Pattern ipPattern = Pattern.compile("(.+):\\d+");
         Matcher ipMatcher = ipPattern.matcher(ipPortAddress);
 
@@ -249,6 +289,7 @@ public class Peer {
     }
 
     private static Integer getPortFromIpPort(String ipPortAddress){
+        /* Método para extração da porta de string com formato IP:PORTA */
         Pattern ipPattern = Pattern.compile(".+:(\\d+)");
         Matcher ipMatcher = ipPattern.matcher(ipPortAddress);
 
@@ -258,6 +299,9 @@ public class Peer {
     }
 
     public static void main(String[] args) throws SocketException, UnknownHostException, IOException{
+        /* Método main, responsável por instanciar o peer, startar a thread menu e ouvir novas requisições/startar
+         * a thread server após inicialização
+        */
         Scanner scanner = new Scanner(System.in);
         Peer peer = new Peer(scanner);
         ThreadMenu threadMenu = peer.new ThreadMenu();
