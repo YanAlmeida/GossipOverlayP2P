@@ -84,7 +84,7 @@ public class Peer {
                 try {
                     sleep(30000);
                     filesFolder = Arrays.asList(folder.listFiles()).stream().map(File::getName).collect(Collectors.toList());
-                    System.out.println(String.format("Sou peer [%s]:[%d] com arquivos %s", getIpAddress(address.getAddress()), port, Arrays.toString(filesFolder.toArray())));
+                    System.out.println(String.format("Sou peer %s:%d com arquivos %s", getIpAddress(address.getAddress()), port, Arrays.toString(filesFolder.toArray())));
                 } catch (InterruptedException e) {
                     return;
                 }
@@ -122,17 +122,15 @@ public class Peer {
             threadRotina.start();
         }
 
-        public void busca() throws UnknownHostException, InterruptedException {
-            System.out.println("Digite o nome do arquivo (com extensão): ");
+        public Boolean busca(String filename) throws UnknownHostException, InterruptedException {
             String uuid = UUID.randomUUID().toString();
-            String filename = scanner.next();
             if(search(filename, address, port, uuid)){
-                if(conditionThreadMenu.await(30, TimeUnit.SECONDS)){
-                    return;
+                if(conditionThreadMenu.await(1250, TimeUnit.MILLISECONDS)){
+                    return true;
                 }
-                System.out.println("Ninguém no sistema possui o arquivo " + filename);
+                return false;
             }
-    
+            return true;
         }
 
         public void run() {
@@ -150,22 +148,30 @@ public class Peer {
                             try {
                                 inicializa();
                             } catch (UnknownHostException e) {
-                                loop = false;
                                 e.printStackTrace();
                             } catch (SocketException e) {
-                                loop = false;
                                 e.printStackTrace();
                             }
                         break;
     
                         case "2":
                             try {
-                                busca();
+                                System.out.println("Digite o nome do arquivo (com extensão): ");
+                                String fileName = scanner.next();
+                                Integer attempts = 1;
+                                while(attempts <= 4){
+                                    if(busca(fileName)){
+                                        break;
+                                    }
+                                    System.out.println(attempts + " tentativa falhou. Tentando novamente..."); 
+                                    attempts++;
+                                }
+                                if(attempts > 4){
+                                    System.out.println("Ninguém no sistema possui o arquivo " + fileName);
+                                }
                             }catch (UnknownHostException e) {
-                                loop = false;
                                 e.printStackTrace();
                             }catch (InterruptedException e){
-                                loop = false;
                                 e.printStackTrace();
                             }
                         break;
@@ -207,7 +213,9 @@ public class Peer {
                         try {
                             conditionThreadMenu.signal();
                             System.out.println("Arquivo " + mensagemRecebida.fileName + " está no peer " + mensagemRecebida.sender);
-                        } finally {
+                        } catch(Exception e){
+                            e.printStackTrace();
+                        }finally {
                             lockThreadMenu.unlock();
                         }
                         
