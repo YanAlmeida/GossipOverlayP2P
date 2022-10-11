@@ -1,3 +1,5 @@
+package br.com.redeBuscaArquivos;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -234,7 +236,7 @@ public class Peer {
                 switch(mensagemRecebida.messageType) {
                     case "REQUEST":
                         if(processedRequests.contains(mensagemRecebida.requestUUID)){
-                            System.out.println("Requisição já processada.");
+                            System.out.println("Requisição já processada para " + mensagemRecebida.fileName);
                             return;
                         }
                         processedRequests.add(mensagemRecebida.requestUUID);
@@ -243,14 +245,14 @@ public class Peer {
     
                     case "RESPONSE":
                         if(processedResponses.contains(mensagemRecebida.requestUUID)){
-                            System.out.println("Requisição já processada.");
+                            System.out.println("Resposta já processada para " + mensagemRecebida.fileName);
                             return;
                         }
                         processedResponses.add(mensagemRecebida.requestUUID);
                         lockThreadMenu.lock();
                         try {
                             conditionThreadMenu.signal();
-                            System.out.println("Arquivo " + mensagemRecebida.fileName + " está no peer " + mensagemRecebida.sender);
+                            System.out.println("Peer com arquivo procurado: " + mensagemRecebida.sender + " " + mensagemRecebida.fileName);
                         } catch(Exception e){
                             e.printStackTrace();
                         }finally {
