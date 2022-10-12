@@ -1,4 +1,4 @@
-package br.com.redeBuscaArquivos;
+package br.com.ufabc.redeBuscaArquivos;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

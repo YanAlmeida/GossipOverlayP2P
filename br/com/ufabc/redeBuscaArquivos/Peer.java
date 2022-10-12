@@ -1,4 +1,4 @@
-package br.com.redeBuscaArquivos;
+package br.com.ufabc.redeBuscaArquivos;
 
 import java.io.File;
 import java.io.IOException;
