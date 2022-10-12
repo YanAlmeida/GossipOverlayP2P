@@ -116,6 +116,7 @@ public class Peer {
              * além de inicializar a thread rotina.
              */
             if(threadRotina != null){
+                initialized = false;
                 threadRotina.interrupt();
                 serverSocket.close();
             }
@@ -184,18 +185,22 @@ public class Peer {
     
                         case "2":
                             try {
-                                System.out.println("Digite o nome do arquivo (com extensão): ");
-                                String fileName = scanner.next();
-                                Integer attempts = 1;
-                                while(attempts <= 4){
-                                    if(busca(fileName)){
-                                        break;
+                                if(initialized){
+                                    System.out.println("Digite o nome do arquivo (com extensão): ");
+                                    String fileName = scanner.next();
+                                    Integer attempts = 1;
+                                    while(attempts <= 4){
+                                        if(busca(fileName)){
+                                            break;
+                                        }
+                                        System.out.println(attempts + " tentativa falhou. Tentando novamente..."); 
+                                        attempts++;
                                     }
-                                    System.out.println(attempts + " tentativa falhou. Tentando novamente..."); 
-                                    attempts++;
-                                }
-                                if(attempts > 4){
-                                    System.out.println("Ninguém no sistema possui o arquivo " + fileName);
+                                    if(attempts > 4){
+                                        System.out.println("Ninguém no sistema possui o arquivo " + fileName);
+                                    }
+                                }else{
+                                    System.out.println("Inicialize o peer antes de iniciar uma busca.");
                                 }
                             }catch (UnknownHostException e) {
                                 e.printStackTrace();
@@ -300,7 +305,7 @@ public class Peer {
         return Integer.parseInt(ipMatcher.group(1));
     }
 
-    public static void main(String[] args) throws SocketException, UnknownHostException, IOException{
+    public static void main(String[] args) throws UnknownHostException, IOException{
         /* Método main, responsável por instanciar o peer, startar a thread menu e ouvir novas requisições/startar
          * a thread server após inicialização
         */
@@ -313,9 +318,18 @@ public class Peer {
             if(peer.initialized){
                 byte[] recBuffer = new byte[1024];
                 DatagramPacket recPkt = new DatagramPacket(recBuffer, recBuffer.length);
-                peer.serverSocket.receive(recPkt);
-                ThreadServer threadServer = peer.new ThreadServer(recPkt);
-                threadServer.start();
+                try{
+                    peer.serverSocket.receive(recPkt);
+                    ThreadServer threadServer = peer.new ThreadServer(recPkt);
+                    threadServer.start();
+                }catch(SocketException e){
+                    if(peer.initialized){
+                        System.out.println("Algo deu errado. Inicialize o peer novamente.");
+                        peer.initialized = false;
+                    }
+                    continue;
+                }
+
             }
         }
 
